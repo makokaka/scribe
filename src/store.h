@@ -506,11 +506,17 @@ class NullStore : public Store {
 /*
  * This store relays messages to n other stores
  * @author Joel Seligstein
+ * To be base class of AnyStore, a new constructor is added
+ * @author xumaoxing
  */
 class MultiStore : public Store {
  public:
   MultiStore(StoreQueue* storeq,
              const std::string& category,
+             bool multi_category);
+  MultiStore(StoreQueue* storeq,
+             const std::string& category,
+             const std::string &type,
              bool multi_category);
   ~MultiStore();
 
@@ -621,4 +627,31 @@ class ThriftMultiFileStore : public CategoryStore {
   ThriftMultiFileStore(Store& rhs);
   ThriftMultiFileStore& operator=(Store& rhs);
 };
+
+/*
+ * This store relays messages to only *ONE* of other stores
+ * This store is based from MultiStore
+ * A new constructor is added to MultiStore, see MultiStore for details
+ * @author xumaoxing
+ */
+class AnyStore : public MultiStore {
+ public:
+  AnyStore(StoreQueue* storeq,
+             const std::string& category,
+             bool multi_category);
+  ~AnyStore();
+
+  boost::shared_ptr<Store> copy(const std::string &category);
+
+  void configure(pStoreConf configuration, pStoreConf parent);
+
+  bool handleMessages(boost::shared_ptr<logentry_vector_t> messages);
+
+ private:
+  // disallow copy, assignment, and empty construction
+  AnyStore();
+  AnyStore(Store& rhs);
+  AnyStore& operator=(Store& rhs);
+};
+
 #endif // SCRIBE_STORE_H

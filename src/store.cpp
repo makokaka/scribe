@@ -2596,6 +2596,13 @@ MultiStore::MultiStore(StoreQueue* storeq,
   : Store(storeq, category, "multi", multi_category) {
 }
 
+MultiStore::MultiStore(StoreQueue* storeq,
+                      const std::string& category,
+                      const std::string &type,
+                      bool multi_category)
+  : Store(storeq, category, type, multi_category) {
+}
+
 MultiStore::~MultiStore() {
 }
 
@@ -2955,3 +2962,100 @@ ThriftMultiFileStore::~ThriftMultiFileStore() {
 void ThriftMultiFileStore::configure(pStoreConf configuration, pStoreConf parent) {
   configureCommon(configuration, parent, "thriftfile");
 }
+
+
+AnyStore::AnyStore(StoreQueue* storeq,
+                  const std::string& category,
+                  bool multi_category)
+  : MultiStore(storeq, category, "any", multi_category)
+{
+}
+
+AnyStore::~AnyStore() {
+}
+
+boost::shared_ptr<Store> AnyStore::copy(const std::string &category) {
+  AnyStore *store = new AnyStore(storeQueue, category, multiCategory);
+  store->report_success = this->report_success;
+  boost::shared_ptr<Store> tmp_copy;
+  for (std::vector<boost::shared_ptr<Store> >::iterator iter = stores.begin();
+      iter != stores.end();
+      ++iter) {
+    tmp_copy = (*iter)->copy(category);
+    store->stores.push_back(tmp_copy);
+  }
+
+  return shared_ptr<Store>(store);
+}
+
+
+void AnyStore::configure(pStoreConf configuration, pStoreConf parent) {
+  Store::configure(configuration, parent);
+  /**
+   * in this store, we look for other numbered stores
+   * in the following fashion:
+   * <store>
+   *   type=any
+   *   <store0>
+   *     ...
+   *   </store0>
+       ...
+   *   <storen>
+   *     ...
+   *   </storen>
+   * </store>
+   */
+  pStoreConf cur_conf;
+  string cur_type;
+  boost::shared_ptr<Store> cur_store;
+
+  // assign reporting preference
+  report_success = SUCCESS_ANY;
+
+  // find stores
+  for (int i=0; ;++i) {
+    stringstream ss;
+    ss << "store" << i;
+    if (!configuration->getStore(ss.str(), cur_conf)) {
+      // allow this to be 0 or 1 indexed
+      if (i == 0) {
+        continue;
+      }
+
+      // no store for this id? we're finished.
+      break;
+    } else {
+      // find this store's type
+      if (!cur_conf->getString("type", cur_type)) {
+        LOG_OPER("[%s] MULTI: Store %d is missing type.", categoryHandled.c_str(), i);
+        setStatus("MULTI: Store is missing type.");
+        return;
+      } else {
+        // add it to the list
+        cur_store = createStore(storeQueue, cur_type, categoryHandled, false,
+                                multiCategory);
+        LOG_OPER("[%s] MULTI: Configured store of type %s successfully.",
+                 categoryHandled.c_str(), cur_type.c_str());
+        cur_store->configure(cur_conf, storeConf);
+        stores.push_back(cur_store);
+      }
+    }
+  }
+
+  if (stores.size() == 0) {
+    setStatus("MULTI: No stores found, invalid store.");
+    LOG_OPER("[%s] MULTI: No stores found, invalid store.", categoryHandled.c_str());
+  }
+}
+
+bool AnyStore::handleMessages(boost::shared_ptr<logentry_vector_t> messages) {
+  for (std::vector<boost::shared_ptr<Store> >::iterator iter = stores.begin();
+       iter != stores.end();
+       ++iter) {
+    if ((*iter)->handleMessages(messages))
+      return true;
+  }
+
+  return false;
+}
+
