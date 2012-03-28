@@ -109,6 +109,8 @@ Store::createStore(StoreQueue* storeq, const string& type,
   } else if (0 == type.compare("thriftmultifile")) {
     return shared_ptr<Store>(new ThriftMultiFileStore(storeq, category,
                                                       multi_category));
+  } else if (0 == type.compare("any")) {
+    return shared_ptr<Store>(new AnyStore(storeq, category, multi_category));
   } else {
     return shared_ptr<Store>();
   }
@@ -3027,14 +3029,14 @@ void AnyStore::configure(pStoreConf configuration, pStoreConf parent) {
     } else {
       // find this store's type
       if (!cur_conf->getString("type", cur_type)) {
-        LOG_OPER("[%s] MULTI: Store %d is missing type.", categoryHandled.c_str(), i);
-        setStatus("MULTI: Store is missing type.");
+        LOG_OPER("[%s] ANY: Store %d is missing type.", categoryHandled.c_str(), i);
+        setStatus("ANY: Store is missing type.");
         return;
       } else {
         // add it to the list
         cur_store = createStore(storeQueue, cur_type, categoryHandled, false,
                                 multiCategory);
-        LOG_OPER("[%s] MULTI: Configured store of type %s successfully.",
+        LOG_OPER("[%s] ANY: Configured store of type %s successfully.",
                  categoryHandled.c_str(), cur_type.c_str());
         cur_store->configure(cur_conf, storeConf);
         stores.push_back(cur_store);
@@ -3043,8 +3045,8 @@ void AnyStore::configure(pStoreConf configuration, pStoreConf parent) {
   }
 
   if (stores.size() == 0) {
-    setStatus("MULTI: No stores found, invalid store.");
-    LOG_OPER("[%s] MULTI: No stores found, invalid store.", categoryHandled.c_str());
+    setStatus("ANY: No stores found, invalid store.");
+    LOG_OPER("[%s] ANY: No stores found, invalid store.", categoryHandled.c_str());
   }
 }
 
@@ -3052,10 +3054,22 @@ bool AnyStore::handleMessages(boost::shared_ptr<logentry_vector_t> messages) {
   for (std::vector<boost::shared_ptr<Store> >::iterator iter = stores.begin();
        iter != stores.end();
        ++iter) {
-    if ((*iter)->handleMessages(messages))
+    if ((*iter)->isOpen() && (*iter)->handleMessages(messages))
       return true;
   }
 
   return false;
+}
+
+// Call periodicCheck on all contained stores
+void AnyStore::periodicCheck() {
+  for (std::vector<boost::shared_ptr<Store> >::iterator iter = stores.begin();
+       iter != stores.end();
+       ++iter) {
+    if (0 == (*iter)->getType().compare("network") && !((*iter)->isOpen())) {
+      (*iter)->open();
+    }
+    (*iter)->periodicCheck();
+  }
 }
 

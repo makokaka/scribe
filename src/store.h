@@ -646,6 +646,7 @@ class AnyStore : public MultiStore {
   void configure(pStoreConf configuration, pStoreConf parent);
 
   bool handleMessages(boost::shared_ptr<logentry_vector_t> messages);
+  void periodicCheck();
 
  private:
   // disallow copy, assignment, and empty construction
